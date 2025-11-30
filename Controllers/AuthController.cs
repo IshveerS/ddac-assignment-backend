@@ -3,13 +3,14 @@ using DDACAssignment.Dtos.User;
 using DDACAssignment.Models;
 using DDACAssignment.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DDACAssignment.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController(IAuthService authService) : ControllerBase
+    public class AuthController(IAuthService authService, IWebHostEnvironment env) : ControllerBase
     {
         [HttpPost("register")]
         public async Task<ActionResult<User>> Register(AuthDto request)
@@ -29,7 +30,23 @@ namespace DDACAssignment.Controllers
             if (result is null)
                 return BadRequest("Invalid username or password");
 
-            return Ok(result);
+            // Set refresh token as an HttpOnly cookie so it's not accessible from JS
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                // Use secure cookies in non-development environments (should be true for production HTTPS)
+                Secure = !env.IsDevelopment(),
+                SameSite = SameSiteMode.None,
+                Expires = DateTime.UtcNow.AddDays(7)
+            };
+
+            if (result.RefreshToken is not null)
+            {
+                Response.Cookies.Append("refreshToken", result.RefreshToken, cookieOptions);
+            }
+
+            // Return access token only in the response body — refresh token is stored in HttpOnly cookie
+            return Ok(new { accessToken = result.AccessToken });
         }
 
         [HttpPost("refresh-token")]
@@ -46,7 +63,20 @@ namespace DDACAssignment.Controllers
             if (result.RefreshToken is null)
                 return Unauthorized("Invalid Refresh Token");
 
-            return Ok(result);
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = !env.IsDevelopment(),
+                SameSite = SameSiteMode.None,
+                Expires = DateTime.UtcNow.AddDays(7)
+            };
+
+            if (result.RefreshToken is not null)
+            {
+                Response.Cookies.Append("refreshToken", result.RefreshToken, cookieOptions);
+            }
+
+            return Ok(new { accessToken = result.AccessToken });
         }
     }
 }

@@ -46,7 +46,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         options.AddPolicy("AllowFrontend", policy =>
         {
-            policy.WithOrigins(frontendOrigin)
+            policy.WithOrigins(frontendOrigin, "http://localhost:3000", "http://127.0.0.1:3000")
                   .AllowAnyHeader()
                   .AllowAnyMethod()
                   .AllowCredentials();
@@ -57,6 +57,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IApplyService, ApplyService>();
 var app = builder.Build();
+
+// Auto-apply migrations on startup
+using (var scope = app.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    logger.LogWarning("=== STARTING MIGRATIONS ===");
+    
+    var db = scope.ServiceProvider.GetRequiredService<DDACDbContext>();
+    var pendingMigrations = db.Database.GetPendingMigrations().ToList();
+    
+    logger.LogWarning($"Found {pendingMigrations.Count} pending migrations");
+    foreach (var migration in pendingMigrations)
+    {
+        logger.LogWarning($"  - {migration}");
+    }
+    
+    logger.LogWarning("Applying migrations...");
+    db.Database.Migrate();
+    logger.LogWarning("=== MIGRATIONS COMPLETED ===");
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

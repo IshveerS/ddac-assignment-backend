@@ -1,12 +1,36 @@
 version: "3.9"
 services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: 12345678
+      POSTGRES_USER: postgres
+      POSTGRES_DB: ddac_assignment
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ddac-network
+
   ddcapi:
     image: ddcapi:testv2
     build: .
     ports:
     - "8080:8080"
     environment:
-       ConnectionStrings__PostgresConnection: ${CONNECTION_STRING}
+       ConnectionStrings__PostgresConnection: "Host=postgres;Database=ddac_assignment;Username=postgres;Password=12345678;SSL Mode=Disable"
        AppSettings__Token: ${JWT_TOKEN}
        APpSettings__Issuer: ${JWT_ISSUER}
        AppSettings__Audience: ${JWT_AUDIENCE}
+    depends_on:
+      - postgres
+    networks:
+      - ddac-network
+
+volumes:
+  postgres_data:
+
+networks:
+  ddac-network:
+    driver: bridge

@@ -1,89 +1,151 @@
-﻿using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
+using DDACAssignment.Data;
+using DDACAssignment.Dtos.Tournaments;
+using DDACAssignment.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace DDACAssignment.Controllers
 {
     [Route("api/organizers")]
     [ApiController]
+    [Authorize(Roles = "Organizer")]
     public class OrganizersController : ControllerBase
     {
-        [HttpGet("me")]
-        public string Me()
-        {
-            return "me";
-        }
+        private readonly DDACDbContext _context;
+        public OrganizersController(DDACDbContext context) => _context = context;
 
-        [HttpPatch("me")]
-        public string UpdateMe()
+        private Guid GetUserId()
         {
-            return "me";
+            var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return id is null ? Guid.Empty : Guid.Parse(id);
         }
 
         [HttpPost("tournaments")]
-        public string CreateTournaments()
+        public async Task<ActionResult<Tournament>> CreateTournament([FromBody] CreateTournamentDto dto)
         {
-            return "tournament";
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var userId = GetUserId();
+            var organizer = await _context.Organizers.FindAsync(userId);
+            if (organizer is null)
+            {
+                organizer = new Organizer { Id = userId, OrganizationName = "Organizer" };
+                _context.Organizers.Add(organizer);
+            }
+
+            var tournament = new Tournament
+            {
+                Name = dto.Name,
+                Type = dto.Type,
+                Status = "Draft",
+                StartDate = dto.StartDate ?? DateTime.UtcNow,
+                EndDate = dto.EndDate ?? DateTime.UtcNow.AddDays(7),
+                OrganizerId = organizer.Id
+            };
+
+            _context.Tournaments.Add(tournament);
+            await _context.SaveChangesAsync();
+            return Ok(tournament);
         }
 
         [HttpGet("tournaments")]
-        public string GetTournaments()
+        public async Task<ActionResult<IEnumerable<Tournament>>> GetMyTournaments()
         {
-            return "tournament";
+            var userId = GetUserId();
+            var list = await _context.Tournaments
+                .Where(t => t.OrganizerId == userId)
+                .ToListAsync();
+            return Ok(list);
         }
 
-        [HttpPatch("tournaments/{id}")]
-        public string UpdateTournaments(Guid id)
+        [HttpPost("tournaments/{tournamentId}/registrations")]
+        public async Task<ActionResult<Registration>> RegisterTeam(Guid tournamentId, [FromBody] RegistrationRequest request)
         {
-            return $"Update tournaments {id}";
+            var tournament = await _context.Tournaments.FindAsync(tournamentId);
+            if (tournament is null) return NotFound("Tournament not found");
+
+            var team = await _context.Teams.FindAsync(request.TeamId);
+            if (team is null) return NotFound("Team not found");
+
+            var reg = new Registration
+            {
+                TournamentId = tournamentId,
+                TeamId = request.TeamId,
+                Status = "Pending"
+            };
+            _context.Registrations.Add(reg);
+            await _context.SaveChangesAsync();
+            return Ok(reg);
         }
 
-        [HttpPost("tournaments/{id}/start")]
-        public string StartTournament(Guid id)
+        [HttpGet("tournaments/{tournamentId}/registrations")]
+        public async Task<ActionResult<IEnumerable<Registration>>> GetRegistrations(Guid tournamentId, [FromQuery] string? status)
         {
-            return $"Start Tournament {id}";
+            var query = _context.Registrations.Where(r => r.TournamentId == tournamentId);
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(r => r.Status == status);
+            }
+            var list = await query.ToListAsync();
+            return Ok(list);
         }
 
-
-        [HttpPost("tournaments/{id}/end")]
-        public string EndTournament(Guid id)
+        [HttpPost("registrations/{registrationId}/approve")]
+        public async Task<IActionResult> ApproveRegistration(Guid registrationId)
         {
-            return $"End Tournament {id}";
+            var reg = await _context.Registrations.FindAsync(registrationId);
+            if (reg is null) return NotFound();
+            reg.Status = "Approved";
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "approved", reg.Id });
         }
 
-        [HttpDelete("tournaments/{id}")]
-        public string CancelTournament(Guid id)
+        [HttpPost("registrations/{registrationId}/reject")]
+        public async Task<IActionResult> RejectRegistration(Guid registrationId)
         {
-            return "cancelling tournament";
+            var reg = await _context.Registrations.FindAsync(registrationId);
+            if (reg is null) return NotFound();
+            reg.Status = "Rejected";
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "rejected", reg.Id });
         }
 
-        [HttpPost("tournaments/{tournamentId}/matches")]
-        public string CreateMatches()
+        [HttpPost("matches/{matchId}/results")]
+        public async Task<IActionResult> UpdateMatchResults(Guid matchId, [FromBody] MatchResultRequest request)
         {
-            return "Create Matches";
+            var match = await _context.Matches.FindAsync(matchId);
+            if (match is null) return NotFound("Match not found");
+
+            var result = new MatchResult
+            {
+                MatchId = matchId,
+                TeamId = request.TeamId,
+                Result = request.Result,
+                Score = request.Score,
+                Kills = request.Kills,
+                Deaths = request.Deaths,
+                Assists = request.Assists
+            };
+            _context.MatchResults.Add(result);
+            await _context.SaveChangesAsync();
+            return Ok(result);
         }
 
-        [HttpGet("tournaments/{tournamentId}/matches")]
-        public string GetMatches(Guid tournamentId)
+        public class RegistrationRequest
         {
-            return $"Create Matches: {tournamentId}";
+            public Guid TeamId { get; set; }
         }
 
-        [HttpPatch("matches/{matchId}/results")]
-        public string UpdateMatchResults(Guid matchId)
+        public class MatchResultRequest
         {
-            return $"Uodate Match Results {matchId}";
-        }
-
-        [HttpPost("matches/{matchId}/rounds")]
-        public string AddRound(Guid matchId)
-        {
-            return $"Add round {matchId}";
-        }
-
-        [HttpPost("matches/{matchId}/schedule")]
-        public string AddSchedule(Guid matchId)
-        {
-            return $"Add Schedule {matchId}";
+            public Guid TeamId { get; set; }
+            public string Result { get; set; } = string.Empty;
+            public int Score { get; set; }
+            public int Kills { get; set; }
+            public int Deaths { get; set; }
+            public int Assists { get; set; }
         }
     }
 }

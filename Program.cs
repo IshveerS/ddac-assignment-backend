@@ -5,6 +5,8 @@ using DDACAssignment.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using DDACAssignment.Models;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,7 +16,9 @@ var connectionString = builder.Configuration.GetConnectionString("PostgresConnec
         ?? throw new InvalidOperationException("Connection string not found.");
 
 builder.Services.AddDbContext<DDACDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options
+        .UseNpgsql(connectionString)
+        .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
 // Add services to the container.
 
@@ -34,8 +38,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = builder.Configuration["AppSettings:Audience"],
             ValidateLifetime = true,
+            // IMPORTANT: signing key must match the key used when issuing tokens (AppSettings:Token)
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["AppSettings:Audience"]!)),
+                Encoding.UTF8.GetBytes(builder.Configuration["AppSettings:Token"]!)),
             ValidateIssuerSigningKey = true
         };
     });
@@ -65,6 +70,31 @@ using (var scope = app.Services.CreateScope())
     logger.LogWarning("=== STARTING MIGRATIONS ===");
     
     var db = scope.ServiceProvider.GetRequiredService<DDACDbContext>();
+    
+    // Retry connecting to the database
+    var maxRetries = 10;
+    var retryDelay = TimeSpan.FromSeconds(2);
+    for (int i = 0; i < maxRetries; i++)
+    {
+        try
+        {
+            logger.LogWarning($"Attempting to connect to database (attempt {i + 1}/{maxRetries})...");
+            db.Database.CanConnect();
+            logger.LogWarning("Database connection successful!");
+            break;
+        }
+        catch (Exception ex)
+        {
+            if (i == maxRetries - 1)
+            {
+                logger.LogError(ex, "Failed to connect to database after {MaxRetries} attempts", maxRetries);
+                throw;
+            }
+            logger.LogWarning($"Database not ready, waiting {retryDelay.TotalSeconds}s...");
+            await Task.Delay(retryDelay);
+        }
+    }
+    
     var pendingMigrations = db.Database.GetPendingMigrations().ToList();
     
     logger.LogWarning($"Found {pendingMigrations.Count} pending migrations");
@@ -76,6 +106,16 @@ using (var scope = app.Services.CreateScope())
     logger.LogWarning("Applying migrations...");
     db.Database.Migrate();
     logger.LogWarning("=== MIGRATIONS COMPLETED ===");
+
+    try
+    {
+        await db.SeedDefaultUsersAsync();
+        logger.LogWarning("Default admin/organiser seeded (if missing).");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to seed default users.");
+    }
 }
 
 // Configure the HTTP request pipeline.

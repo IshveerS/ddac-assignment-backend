@@ -26,7 +26,8 @@ namespace DDACAssignment.Services
             var response = new TokenResponseDto
             {
                 AccessToken = CreateToken(user),
-                RefreshToken = await GenerateAndSaveRefreshTokenAsync(user)
+                RefreshToken = await GenerateAndSaveRefreshTokenAsync(user),
+                Role = user.Role
             };
 
             return response;
@@ -43,8 +44,8 @@ namespace DDACAssignment.Services
             var response = new TokenResponseDto
             {
                 AccessToken = CreateToken(user),
-                RefreshToken = await GenerateAndSaveRefreshTokenAsync(user)
-
+                RefreshToken = await GenerateAndSaveRefreshTokenAsync(user),
+                Role = user.Role
             };
 
             return response;
@@ -63,6 +64,16 @@ namespace DDACAssignment.Services
             user.Username = request.Username;
             user.PasswordHash = hashedPassword;
             user.Email = request.Email;
+            // Auto-assign role for known bootstrap usernames
+            if (request.Username.Equals("admin", StringComparison.OrdinalIgnoreCase))
+            {
+                user.Role = "Admin";
+            }
+            else if (request.Username.Equals("organiser", StringComparison.OrdinalIgnoreCase) ||
+                     request.Username.Equals("organizer", StringComparison.OrdinalIgnoreCase))
+            {
+                user.Role = "Organizer";
+            }
 
             context.Users.Add(user);
 

@@ -46,7 +46,7 @@ namespace DDACAssignment.Controllers
             }
 
             // Return access token only in the response body — refresh token is stored in HttpOnly cookie
-            return Ok(new { accessToken = result.AccessToken });
+            return Ok(new { accessToken = result.AccessToken, role = result.Role });
         }
 
         [HttpPost("refresh-token")]
@@ -76,7 +76,7 @@ namespace DDACAssignment.Controllers
                 Response.Cookies.Append("refreshToken", result.RefreshToken, cookieOptions);
             }
 
-            return Ok(new { accessToken = result.AccessToken });
+            return Ok(new { accessToken = result.AccessToken, role = result.Role });
         }
     }
 }

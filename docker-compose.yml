@@ -20,9 +20,9 @@ services:
     - "8080:8080"
     environment:
        ConnectionStrings__PostgresConnection: "Host=postgres;Database=ddac_assignment;Username=postgres;Password=12345678;SSL Mode=Disable"
-       AppSettings__Token: ${JWT_TOKEN}
-       APpSettings__Issuer: ${JWT_ISSUER}
-       AppSettings__Audience: ${JWT_AUDIENCE}
+       AppSettings__Token: ${JWT_TOKEN:-super-secret-dev-key}
+       AppSettings__Issuer: ${JWT_ISSUER:-ddac-api}
+       AppSettings__Audience: ${JWT_AUDIENCE:-ddac-api}
     depends_on:
       - postgres
     networks:

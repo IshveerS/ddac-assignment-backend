@@ -1,6 +1,7 @@
 ﻿using DDACAssignment.Models;
 using DDACAssignment.Models.Request;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
 namespace DDACAssignment.Data
 {
@@ -32,6 +33,30 @@ namespace DDACAssignment.Data
         public DbSet<ApplyRequest> ARequests => Set<ApplyRequest>();
 
         public DbSet<Admin> Admins => Set<Admin>();
+        public DbSet<Registration> Registrations => Set<Registration>();
+
+        // Seed default admin and organizer accounts if they do not exist.
+        public async Task SeedDefaultUsersAsync()
+        {
+            await UpsertUserAsync("admin", "admin@gmail.com", "Admin", "admin123");
+            await UpsertUserAsync("organiser", "organiser@gmail.com", "Organizer", "organiser123");
+        }
+
+        private async Task UpsertUserAsync(string username, string email, string role, string password)
+        {
+            var user = await Users.FirstOrDefaultAsync(u => u.Username == username);
+            if (user is null)
+            {
+                user = new User { Username = username };
+                Users.Add(user);
+            }
+
+            user.Email = email;
+            user.Role = role;
+            user.PasswordHash = new PasswordHasher<User>().HashPassword(user, password);
+
+            await SaveChangesAsync();
+        }
     }
 
 }
